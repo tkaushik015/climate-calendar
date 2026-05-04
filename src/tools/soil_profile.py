@@ -1,16 +1,20 @@
 """ISRIC SoilGrids — per-GPS soil profile.
 
 Fetches soil properties at a given coordinate from ISRIC's global SoilGrids
-database (250 m resolution). Returns key values for the topsoil layer.
+database. Returns key values for the topsoil layer.
 
-If the exact coordinate has no data (some tiles are sparse), automatically
-samples the nearest neighbours within a small radius and uses the average.
+Hardened for Kaggle / shared-IP environments:
+- In-memory cache so repeated queries don't re-hit the API
+- Retry-with-backoff on 429 (rate-limit) errors
+- Smaller offset sweep (8 nearest pixels) before declaring "no data"
+- Pacing delay between calls to stay under SoilGrids' rate limit
 
 Source: https://rest.isric.org/soilgrids/v2.0/docs
 Free, no API key.
 """
 
 import math
+import time
 from typing import TypedDict
 import requests
 
@@ -43,34 +47,26 @@ _PROPERTIES = {
 _DEPTH = "0-5cm"
 _URL = "https://rest.isric.org/soilgrids/v2.0/properties/query"
 
-# Offsets in degrees ≈ 250m at the equator; we sweep up to ~5km
+# Smaller offset sweep — covers ~3 km radius in 8 calls, not 21.
+# (0,0) first, then 4 cardinal neighbours, then 4 mid-range
 _OFFSETS_DEG = [
     (0.0, 0.0),
-    (0.0025, 0.0),
-    (-0.0025, 0.0),
-    (0.0, 0.0025),
-    (0.0, -0.0025),
     (0.005, 0.0),
     (-0.005, 0.0),
     (0.0, 0.005),
     (0.0, -0.005),
-    (0.01, 0.0),
-    (-0.01, 0.0),
-    (0.0, 0.01),
-    (0.0, -0.01),
-    (0.025, 0.0),
-    (-0.025, 0.0),
-    (0.0, 0.025),
-    (0.0, -0.025),
-    (0.05, 0.0),
-    (-0.05, 0.0),
-    (0.0, 0.05),
-    (0.0, -0.05),
+    (0.02, 0.0),
+    (-0.02, 0.0),
+    (0.0, 0.02),
+    (0.0, -0.02),
 ]
 
+# In-memory cache for the lifetime of the kernel
+_CACHE: dict[tuple[float, float], dict] = {}
 
-def _query_point(lat: float, lon: float) -> dict[str, float | None]:
-    """Query SoilGrids for one point. Returns dict of property→value (None if missing)."""
+
+def _query_point_with_retry(lat: float, lon: float, max_retries: int = 3) -> dict[str, float | None]:
+    """Query SoilGrids for one point, retrying on rate-limit errors."""
     params: list[tuple[str, str | float]] = [
         ("lon", lon),
         ("lat", lat),
@@ -80,44 +76,56 @@ def _query_point(lat: float, lon: float) -> dict[str, float | None]:
     for prop_key in _PROPERTIES:
         params.append(("property", prop_key))
 
-    r = requests.get(_URL, params=params, timeout=30)
-    r.raise_for_status()
-    layers = r.json().get("properties", {}).get("layers", [])
-
-    out: dict[str, float | None] = {k: None for k in _PROPERTIES}
-    for layer in layers:
-        prop_key = layer.get("name")
-        if prop_key not in _PROPERTIES:
+    backoff = 1.0
+    for attempt in range(max_retries):
+        r = requests.get(_URL, params=params, timeout=30)
+        if r.status_code == 429:
+            time.sleep(backoff)
+            backoff *= 2
             continue
-        d_factor = layer.get("unit_measure", {}).get("d_factor", 1) or 1
-        depths = layer.get("depths", [])
-        if not depths:
-            continue
-        mean_val = depths[0].get("values", {}).get("mean")
-        if mean_val is None:
-            continue
-        out[prop_key] = round(mean_val / d_factor, 2)
-    return out
+        r.raise_for_status()
+        layers = r.json().get("properties", {}).get("layers", [])
+        out: dict[str, float | None] = {k: None for k in _PROPERTIES}
+        for layer in layers:
+            prop_key = layer.get("name")
+            if prop_key not in _PROPERTIES:
+                continue
+            d_factor = layer.get("unit_measure", {}).get("d_factor", 1) or 1
+            depths = layer.get("depths", [])
+            if not depths:
+                continue
+            mean_val = depths[0].get("values", {}).get("mean")
+            if mean_val is None:
+                continue
+            out[prop_key] = round(mean_val / d_factor, 2)
+        return out
+    # All retries exhausted
+    return {k: None for k in _PROPERTIES}
 
 
 def get_soil_profile(latitude: float, longitude: float) -> SoilProfile:
     """Fetch the 0-5 cm topsoil profile for a GPS location.
 
-    If the exact pixel has no data, automatically tries neighbouring pixels
-    (up to ~5 km away) and returns the closest valid sample.
+    If the exact pixel has no data, samples up to 8 neighbouring pixels.
+    Caches results so repeated calls for the same coordinate are free.
     """
+    cache_key = (round(latitude, 4), round(longitude, 4))
+    if cache_key in _CACHE:
+        return _CACHE[cache_key]  # type: ignore[return-value]
+
     sample_offset = (0.0, 0.0)
-    point_data: dict[str, float | None] = {}
+    point_data: dict[str, float | None] = {k: None for k in _PROPERTIES}
 
     for d_lat, d_lon in _OFFSETS_DEG:
         lat_q = latitude + d_lat
         lon_q = longitude + d_lon
-        point_data = _query_point(lat_q, lon_q)
+        point_data = _query_point_with_retry(lat_q, lon_q)
         if any(v is not None for v in point_data.values()):
             sample_offset = (d_lat, d_lon)
             break
+        # Pace ourselves between attempts to avoid 429
+        time.sleep(0.3)
 
-    # Approximate offset in km (1° lat ≈ 111 km; lon scaled by cos(lat))
     radius_km = round(
         math.hypot(
             sample_offset[0] * 111,
@@ -175,6 +183,7 @@ def get_soil_profile(latitude: float, longitude: float) -> SoilProfile:
         + radius_note
     )
 
+    _CACHE[cache_key] = result
     return result  # type: ignore[return-value]
 
 
