@@ -215,52 +215,107 @@ def run_agent(
     return "[Agent stopped: max iterations reached.]"
 
 
+def _split_top_level_commas(s: str) -> list[str]:
+    """Split a string on commas that aren't inside nested braces/brackets."""
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for ch in s:
+        if ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    if current:
+        parts.append("".join(current))
+    return parts
+
+
+def _parse_compact_args(args_str: str) -> dict:
+    """Parse Gemma E4B's compact arg format: 'key:value,key:value'.
+
+    Values can be:
+    - numbers (int or float, possibly negative)
+    - bare strings (no quotes)
+    - booleans (true/false)
+    - empty (for tools that take no args)
+    """
+    if not args_str.strip():
+        return {}
+
+    arguments: dict = {}
+    for pair in _split_top_level_commas(args_str):
+        if ":" not in pair:
+            continue
+        key, _, value = pair.partition(":")
+        key = key.strip().strip('"\'')
+        value = value.strip().strip('"\'')
+
+        # Type-coerce the value
+        if value.lower() == "true":
+            arguments[key] = True
+        elif value.lower() == "false":
+            arguments[key] = False
+        elif value.lower() in ("null", "none"):
+            arguments[key] = None
+        else:
+            # Try int, then float, then leave as string
+            try:
+                arguments[key] = int(value)
+            except ValueError:
+                try:
+                    arguments[key] = float(value)
+                except ValueError:
+                    arguments[key] = value
+    return arguments
+
+
 def _extract_tool_calls(text: str) -> list[dict]:
     """Extract tool calls from Gemma 4's response.
 
-    Gemma 4 emits tool calls in a few possible formats. This is a forgiving
-    parser that tries the common patterns and filters to known tools.
+    Gemma 4 E4B emits tool calls in a compact, non-JSON format:
+        call:tool_name{key:value,key:value}call:another_tool{...}
+
+    Arguments are not quoted: keys and string values appear bare.
+    Numbers and floats appear as-is. We parse this format directly,
+    while still supporting the standard ```tool_call``` JSON form
+    as a fallback for the larger Gemma 4 sizes.
     """
     calls: list[dict] = []
 
-    # Pattern 1: ```tool_call\n{...}\n```
-    for m in re.finditer(r"```tool_call\s*(\{.*?\})\s*```", text, re.DOTALL):
-        try:
-            obj = json.loads(m.group(1))
-            calls.append(
-                {
-                    "name": obj.get("name")
-                    or obj.get("function", {}).get("name"),
-                    "arguments": obj.get("arguments")
-                    or obj.get("function", {}).get("arguments", {}),
-                }
-            )
-        except json.JSONDecodeError:
-            continue
+    # Pattern 1 (E4B native format): call:tool_name{args}
+    pattern = re.compile(r"call:([a-zA-Z_][a-zA-Z0-9_]*)\s*\{([^{}]*)\}")
+    for m in pattern.finditer(text):
+        tool_name = m.group(1)
+        args_str = m.group(2).strip()
+        arguments = _parse_compact_args(args_str)
+        calls.append({"name": tool_name, "arguments": arguments})
 
-    # Pattern 2: ```json {"name": "...", "arguments": {...}} ```
+    # Pattern 2 (fallback): ```tool_call\n{...}\n```
+    if not calls:
+        for m in re.finditer(r"```tool_call\s*(\{.*?\})\s*```", text, re.DOTALL):
+            try:
+                obj = json.loads(m.group(1))
+                calls.append(
+                    {
+                        "name": obj.get("name")
+                        or obj.get("function", {}).get("name"),
+                        "arguments": obj.get("arguments")
+                        or obj.get("function", {}).get("arguments", {}),
+                    }
+                )
+            except json.JSONDecodeError:
+                continue
+
+    # Pattern 3 (fallback): ```json {"name": "...", "arguments": {...}} ```
     if not calls:
         for m in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL):
             try:
                 obj = json.loads(m.group(1))
-                if "name" in obj:
-                    calls.append(
-                        {
-                            "name": obj["name"],
-                            "arguments": obj.get("arguments", {}),
-                        }
-                    )
-            except json.JSONDecodeError:
-                continue
-
-    # Pattern 3: bare JSON containing both "name" and "arguments"
-    if not calls:
-        for m in re.finditer(
-            r'\{[^{}]*"name"\s*:\s*"[^"]+"[^{}]*"arguments"\s*:\s*\{[^{}]*\}[^{}]*\}',
-            text,
-        ):
-            try:
-                obj = json.loads(m.group(0))
                 if "name" in obj:
                     calls.append(
                         {
