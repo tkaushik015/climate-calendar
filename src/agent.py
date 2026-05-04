@@ -140,34 +140,36 @@ def run_agent(
     max_new_tokens: int = 400,
     verbose: bool = True,
 ) -> str:
-    """Run the agentic loop until Gemma produces a final answer.
-
-    Args:
-        user_query: The farmer's natural-language question.
-        processor: Loaded Gemma 4 processor.
-        model: Loaded Gemma 4 model.
-        tools: Tool catalog.
-        max_iterations: Safety cap on tool-call rounds.
-        max_new_tokens: Per-iteration generation budget.
-        verbose: If True, print each tool call and result.
-
-    Returns:
-        The final answer text.
-    """
+    """Run the agentic loop until Gemma produces a final answer."""
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_query},
     ]
 
     for iteration in range(max_iterations):
-        inputs = processor.apply_chat_template(
-            messages,
-            tools=tools,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        ).to(model.device, dtype=model.dtype)
+        try:
+            inputs = processor.apply_chat_template(
+                messages,
+                tools=tools,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+            ).to(model.device, dtype=model.dtype)
+        except Exception as e:
+            # If the chat template can't render the tool message format, fall back
+            # to inlining the tool results into a plain user message and asking Gemma
+            # to synthesize from there.
+            if verbose:
+                print(f"\n[chat template fell back due to: {type(e).__name__}]")
+            return _synthesize_from_tool_results(
+                base_messages=messages,
+                processor=processor,
+                model=model,
+                tool_results=[],
+                max_new_tokens=max_new_tokens,
+                verbose=verbose,
+            )
 
         input_len = inputs["input_ids"].shape[-1]
         out = model.generate(
@@ -196,7 +198,8 @@ def run_agent(
             for c in tool_calls:
                 print(f"  → tool call: {c['name']}({c.get('arguments', {})})")
 
-        messages.append({"role": "assistant", "tool_calls": tool_calls})
+        # Execute tools and collect results for the synthesis step
+        tool_results: list[tuple[str, dict, object]] = []
         for call in tool_calls:
             result = execute_tool_call(call["name"], call.get("arguments", {}))
             if verbose:
@@ -204,15 +207,79 @@ def run_agent(
                 print(
                     f"  ← tool result: {preview}{'...' if len(preview) == 200 else ''}"
                 )
-            messages.append(
-                {
-                    "role": "tool",
-                    "name": call["name"],
-                    "content": json.dumps(result, default=str),
-                }
-            )
+            tool_results.append((call["name"], call.get("arguments", {}), result))
+
+        # Skip the multi-turn assistant/tool message replay (template doesn't like it).
+        # Instead, synthesize directly: hand Gemma a fresh user turn with all results inlined.
+        return _synthesize_from_tool_results(
+            base_messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_query},
+            ],
+            processor=processor,
+            model=model,
+            tool_results=tool_results,
+            max_new_tokens=max_new_tokens,
+            verbose=verbose,
+        )
 
     return "[Agent stopped: max iterations reached.]"
+
+
+def _synthesize_from_tool_results(
+    base_messages: list[dict],
+    processor,
+    model,
+    tool_results: list[tuple[str, dict, object]] | None = None,
+    max_new_tokens: int = 400,
+    verbose: bool = False,
+) -> str:
+    """Hand Gemma all the tool results in one shot and ask for a final answer."""
+    if tool_results is None:
+        tool_results = []
+
+    # Build a clean prompt with the tool outputs inlined
+    tool_block_lines = ["Here are the results from the tools I called for you:\n"]
+    for name, args, result in tool_results:
+        result_json = json.dumps(result, default=str, indent=2)
+        # Truncate huge results so we don't blow context
+        if len(result_json) > 4000:
+            result_json = result_json[:4000] + "\n... [truncated]"
+        tool_block_lines.append(f"### {name}({json.dumps(args)})\n{result_json}\n")
+    tool_block = "\n".join(tool_block_lines)
+
+    follow_up = (
+        f"{tool_block}\n"
+        "Now write a final answer for the farmer. Cite specific numbers from "
+        "the data above (ONI, temperature change, soil pH, etc.). Give a "
+        "5-7 day planting window. Keep the answer under 250 words and speak "
+        "plainly to the farmer."
+    )
+
+    synthesis_messages = base_messages + [
+        {"role": "user", "content": follow_up},
+    ]
+
+    inputs = processor.apply_chat_template(
+        synthesis_messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_dict=True,
+        return_tensors="pt",
+    ).to(model.device, dtype=model.dtype)
+
+    input_len = inputs["input_ids"].shape[-1]
+    out = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+        temperature=1.0,
+        top_p=0.95,
+        top_k=64,
+        use_cache=True,
+        pad_token_id=processor.tokenizer.eos_token_id,
+    )
+    return processor.decode(out[0][input_len:], skip_special_tokens=True).strip()
 
 
 def _split_top_level_commas(s: str) -> list[str]:
