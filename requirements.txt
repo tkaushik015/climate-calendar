@@ -1,0 +1,24 @@
+# Core
+numpy
+pandas
+matplotlib
+requests
+
+# Gemma 4 (install from source until PyPI catches up)
+transformers @ git+https://github.com/huggingface/transformers.git
+accelerate
+safetensors
+tokenizers
+huggingface_hub
+torch
+torchvision
+librosa
+bitsandbytes
+
+# Data integrations
+kagglehub
+ipykernel
+jupyter
+
+# Demo
+gradio

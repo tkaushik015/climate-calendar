@@ -1,0 +1,33 @@
+This is the ClimateCalendar project for the Gemma 4 Good Hackathon (May 18, 2026 deadline).
+
+Project goal:
+Climate-adapted planting companion for smallholder farmers, powered by Gemma 4 E4B running offline. Gives farmers per-GPS, per-crop recommendations grounded in 30+ years of weather data, ENSO forecasts, soil profile, and live observations. Multilingual (140 languages via Gemma).
+
+Architecture constraints:
+- All code must work offline (no cloud LLM calls in production)
+- Gemma 4 inference uses transformers AutoModelForMultimodalLM (NOT AutoModelForCausalLM — Gemma 4 is multimodal)
+- Function-calling tools live under src/tools/, one file per tool, with a single public function per file
+- Every tool returns a JSON-serializable dict or list
+- Type hints on every function signature
+- No banned-pesticide recommendations: filter against data/banned_pesticides_by_country.json
+- Target user: smallholder farmer; tone is plain, language is the farmer's local language
+
+Code style:
+- Functions under 40 lines when possible
+- Network calls always have timeout=30 and call raise_for_status()
+- Use TypedDict or pydantic for return shapes when they're structured
+- Add a __main__ block to each tool file with a quick smoke test
+
+Free APIs we use (all keyless):
+- Open-Meteo Historical + Climate (CMIP6 projections)
+- NOAA ONI (CSV download for ENSO history)
+- IRI ENSO Plume (ENSO forecast)
+- ISRIC SoilGrids (REST)
+- NASA POWER
+- CHIRPS rainfall
+- FAO ECOCROP (crop tolerance)
+- Sentinel-2 NDVI via Google Earth Engine (free for research)
+
+Local dev runs on Mac (CPU). Inference runs on Kaggle (T4 GPU). Final edge demo runs on Pi5 via Ollama (GGUF Q4_K_M).
+
+When suggesting code, prefer keyless free APIs and never require credentials we haven't established.
