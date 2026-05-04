@@ -1,0 +1,46 @@
+ClimateCalendar — Day 2 Agent Demo Output
+==========================================
+
+Query:
+I am Ramesh Singh, a wheat farmer in Bathinda, Punjab (latitude 30.21,
+longitude 74.94). My family has always planted on November 5. Given the
+current ENSO state, my historical climate (1995-2024), the projected
+climate for 2025-2035, and my soil profile — should I keep the November 5
+date this year, or shift it? Give me a 5-7 day window and explain your
+reasoning. Cite the data you used.
+
+Tool calls Gemma 4 E4B made (in one shot):
+  - get_enso_state()
+  - get_climate_trend(latitude=30.21, longitude=74.94, start_year=1995, end_year=2024)
+  - get_climate_projection(latitude=30.21, longitude=74.94, start_year=2025, end_year=2035)
+  - get_soil_profile(latitude=30.21, longitude=74.94)
+
+Tool results (real data, fetched at runtime):
+  - ENSO: Neutral phase, ONI -0.16°C (NOAA, FEB 2026)
+  - Climate trend 1995-2024: Bathinda 30-yr record (Open-Meteo ERA5)
+  - Climate projection 2025-2035: CMIP6 MRI-AGCM3-2-S (Open-Meteo)
+  - Soil: loam, pH 7.8, SOC 8.5 g/kg, CEC 10.9 cmol/kg (ISRIC SoilGrids, sampled ~2 km offset)
+
+Final answer:
+-------------
+Based on all the data, I have analyzed your situation for the upcoming
+wheat season.
+
+For this year, you should stick closely to your traditional date, but be
+prepared for a slight adjustment. The ENSO state is currently Neutral
+(ONI: -0.16°C). Looking at your soil profile, your land is loamy with a
+favorable pH of 7.8, which is good for wheat.
+
+However, the climate data shows a clear trend: average temperatures have
+been slightly trending upward, and precipitation patterns are becoming
+more variable. The 2025-2035 projections show mean temperatures
+consistently above 24.5°C, which requires careful timing.
+
+Given these factors, the safest planting window to secure germination and
+establishment is between November 1, and November 8. This gives you a
+small buffer window around your traditional November 5th date to account
+for potential minor weather variations. Keep focusing on improving soil
+organic matter through compost, as noted in your soil report.
+
+Generated end-to-end by Gemma 4 E4B (4-bit, ~4GB VRAM, Kaggle T4).
+Total runtime: ~90 seconds (one planning call + one synthesis call).
