@@ -28,3 +28,45 @@ Built the function-calling agentic spine of ClimateCalendar.
 - Honest reporting of missing data: when we tested without the strong
   system prompt, Gemma openly said "I do not have the specific ENSO state"
   rather than hallucinating. Good signal for the Safety & Trust track.
+
+## Day 3 (May 5, 2026) — Complete ✅
+
+ClimateCalendar now accepts three input modalities: text, document photos, voice.
+
+### Tools added (`src/tools/`)
+- **soil_ocr.py** — EasyOCR + regex parser for printed soil-test reports
+  - Extracts pH, EC, organic carbon, NPK, zinc from a photographed report
+  - Honest reporting of missing fields (low-confidence OCR results dropped)
+- **voice_intake.py** — Whisper-base ASR wrapper
+  - Transcribes farmer voice notes in any of 99 languages
+  - Detected language returned alongside transcript
+
+### Multimodal demo (notebook 03)
+- OCR demo: synthesized realistic soil-test report → EasyOCR → robust regex
+  parser → Gemma agent generates a grounded recommendation citing 5 of 7 OCR'd
+  fields. Gemma honestly flags missing fields.
+- Voice demo: Whisper transcribes English audio sample → Gemma agent
+  processes the resulting query end-to-end.
+
+### Engineering note
+We tested Gemma 4 E4B's native vision and audio paths and hit two
+upstream bugs:
+1. Vision: chat-template / image-processor token-count mismatch
+   (260 placeholders vs 2520 features); `do_pan_and_scan` kwargs are silently
+   ignored. Result: Gemma sees a "blank gray image."
+2. Audio: `torch.finfo()` crash inside the audio tower when model is loaded
+   in 4-bit quantization. Real upstream bug at `modeling_gemma4.py:403`.
+
+We pivoted to compose with specialized open models (EasyOCR + Whisper)
+around Gemma 4's text core. This is documented in
+`docs/day3_vision_investigation.md`. We will revisit native Gemma 4 vision
+when upstream Transformers stabilizes the integration.
+
+### Insights for the writeup
+- Composing specialized open models around an LLM core is what production
+  multimodal systems do — not a workaround, but a sound architecture.
+- Honest field-extraction failures (OCR can't read Available P / K) → Gemma
+  reasons over what's available and asks the farmer to re-photograph.
+  Same Safety & Trust track signal as Day 2.
+- Day 3 unblocks the demo video: farmer types/photographs/speaks → ClimateCalendar
+  responds.
