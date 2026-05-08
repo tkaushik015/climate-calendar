@@ -3,8 +3,5 @@ __pycache__/
 
 # Fine-tune source PDFs (large, downloadable from PAU)
 finetune/sources/
-
 # Fine-tune output dataset (regenerable from build_dataset.py)
-finetune/data/
-finetune/sources/extracted/
 finetune/sources/extracted/
