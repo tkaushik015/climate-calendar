@@ -19,6 +19,7 @@ from src.tools.climate_trend import get_climate_trend
 from src.tools.climate_projection import get_climate_projection
 from src.tools.enso import get_enso_state
 from src.tools.soil_profile import get_soil_profile
+from src.tools.viability_2050 import get_viability_projection
 
 
 # ---- Tool catalog ----------------------------------------------------------
@@ -97,6 +98,34 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_viability_projection",
+            "description": (
+                "Project whether a specific crop will remain viable at a GPS "
+                "location through 2050, using CMIP6 climate projections plus "
+                "crop-specific growing-season tolerance ranges. Returns current "
+                "status (optimal/marginal/unviable), projected 2050 status, and "
+                "the year viability is first breached (if conditions worsen "
+                "beyond baseline). Use this when the farmer asks about long-term "
+                "planning, climate risk, or whether to keep growing the same "
+                "crop. Supports wheat, rice, maize, cotton, sugarcane."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "crop": {
+                        "type": "string",
+                        "enum": ["wheat", "rice", "maize", "cotton", "sugarcane"],
+                    },
+                    "latitude": {"type": "number"},
+                    "longitude": {"type": "number"},
+                },
+                "required": ["crop", "latitude", "longitude"],
+            },
+        },
+    },
 ]
 
 
@@ -107,6 +136,7 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     "get_climate_projection": get_climate_projection,
     "get_enso_state": get_enso_state,
     "get_soil_profile": get_soil_profile,
+    "get_viability_projection": get_viability_projection,
 }
 
 
