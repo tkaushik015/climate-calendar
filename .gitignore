@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Fine-tune source PDFs (large, downloadable from PAU)
+finetune/sources/
+
+# Fine-tune output dataset (regenerable from build_dataset.py)
+finetune/data/
