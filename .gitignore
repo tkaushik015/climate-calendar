@@ -6,3 +6,4 @@ finetune/sources/
 
 # Fine-tune output dataset (regenerable from build_dataset.py)
 finetune/data/
+finetune/sources/extracted/
