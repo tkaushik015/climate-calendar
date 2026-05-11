@@ -70,3 +70,11 @@ when upstream Transformers stabilizes the integration.
   Same Safety & Trust track signal as Day 2.
 - Day 3 unblocks the demo video: farmer types/photographs/speaks → ClimateCalendar
   responds.
+
+## Day 7 (May 10, 2026) — Fine-tune complete ✅
+
+- Trained LoRA adapter on Gemma 4 E4B with **759** PAU agronomy examples
+- **14-minute** training run on Kaggle T4 (2 epochs, effective batch size 8, lr 2e-4)
+- **Final train loss 0.668**, **val loss 2.95**
+- A/B comparison shows clear improvement: base model failed the cotton whitefly ETL query (“ETL might be typo”); fine-tuned model answered correctly — **5 adult whiteflies per leaf**
+- Adapter published: [tkaushik015/climate-calendar-gemma4-e4b-lora](https://huggingface.co/tkaushik015/climate-calendar-gemma4-e4b-lora)
