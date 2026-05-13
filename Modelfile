@@ -1,0 +1,16 @@
+FROM /Users/tusharkaushik/Downloads/climate_calendar_q4_k_m.gguf
+
+TEMPLATE """<bos><|turn>user
+{{ .Prompt }}<turn|>
+<|turn>model
+{{ .Response }}<turn|>"""
+
+PARAMETER stop "<turn|>"
+PARAMETER stop "<|turn>"
+PARAMETER stop "<bos>"
+PARAMETER stop "<eos>"
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 2048
+PARAMETER num_predict 384
