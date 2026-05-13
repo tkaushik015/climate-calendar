@@ -127,3 +127,25 @@ Model unexpectedly produces Hinglish/Hindi responses naturally — base Gemma 4 
 Gradio app at `app.py` streams agent status + final answer. Default location Bathinda (30.21°N, 74.94°E) hardcoded; UI for location selection in Phase 4.
 
 Demo: `python3 app.py` → http://127.0.0.1:7860
+
+## Day 8 — Phase 3 complete: Multilingual UI (English/Hindi/Punjabi)
+
+Discovered Gemma 4's base multilingual capability survived fine-tuning. Both Devanagari (Hindi) and Gurmukhi (Punjabi) responses work natively — no translation models needed.
+
+Built multilingual UI with:
+
+- Language dropdown (Auto / English / Hindi / Punjabi)
+- System-prompt steering injects `Respond in {language}` instruction
+- Variety steering prompts model to use only PAU-validated variety names (HD 3086, PBW 826, DBW 187, etc.)
+- Examples dynamically update based on selected language
+- Auto-detect mode falls back to input language detection
+
+All three languages tested with tool-firing queries. Live data from Open-Meteo cited correctly across all scripts. PAU variety names preserved across translation.
+
+Switched from `gr.ChatInterface` to `gr.Blocks` to support the language dropdown and prepare for Phase 4 multimodal inputs (voice via Whisper, image via EasyOCR).
+
+Demo flow:
+
+1. Select language (or leave on Auto)
+2. Ask question
+3. Agent plans → calls tools → synthesizes answer in chosen language
