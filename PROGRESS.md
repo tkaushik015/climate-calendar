@@ -1,3 +1,24 @@
+## Day 7 — May 11, 2026 — Offline GGUF deployment complete
+
+- Merged LoRA adapter into Gemma 4 E4B base, exported 16-bit merged model
+- Converted to F16 GGUF (15 GB) via llama.cpp convert_hf_to_gguf.py
+- Quantized F16 → Q4_K_M GGUF (5.3 GB) via llama-quantize binary
+- GGUF uploaded to Hugging Face Hub for public archival
+- Imported into local Ollama on macOS
+- Verified offline inference: cotton whitefly ETL query returned specific PAU answer (10 adult whiteflies per leaf, with definition and reasoning) — fully offline, no internet, runs in CPU
+
+Technical challenges overcome:
+
+- Kaggle 21 GB disk constraint: bypassed by routing intermediate F16 to /tmp (1.3 TB ephemeral)
+- llama.cpp Q8_0 re-quantization disabled: pivoted to F16 → Q4_K_M direct path
+- Ollama 0.23.x auto-thinking polluting output: used --think=false runtime flag
+
+Demo command:
+
+```bash
+ollama run --think=false climate-calendar "What variety of wheat should I sow in Bathinda this November?"
+```
+
 ## Day 7 — May 10, 2026 — Fine-tune complete ✅
 
 - Trained LoRA adapter on Gemma 4 E4B (4-bit) with **759** PAU agronomy examples
