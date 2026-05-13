@@ -107,3 +107,23 @@ when upstream Transformers stabilizes the integration.
   Same Safety & Trust track signal as Day 2.
 - Day 3 unblocks the demo video: farmer types/photographs/speaks → ClimateCalendar
   responds.
+
+## Day 8 — May 13, 2026 — Phase 2 complete: Real agentic flow via Ollama
+
+Built `src/agent_ollama.py` adapting the existing `src/agent.py` (HF transformers) to use Ollama HTTP API for offline inference. Preserved two-call structure: planning → tool execution → synthesis.
+
+Confirmed all 5 tools fire correctly with live data:
+
+- `get_climate_trend` → Open-Meteo ERA5 (1995 24.38°C, 766mm precip)
+- `get_climate_projection` → Open-Meteo CMIP6
+- `get_enso_state` → NOAA ONI (March 2026, +0.11°C, Neutral)
+- `get_soil_profile` → ISRIC SoilGrids (Bathinda: sand 50%, clay 22%, pH 7.8, SOC 8.5)
+- `get_viability_projection` → CMIP6 + crop tolerance (wheat: marginal now, marginal 2050)
+
+Agent correctly distinguishes general-knowledge queries (ETL for whitefly → direct answer) from data-grounded queries (climate trend → tool calls).
+
+Model unexpectedly produces Hinglish/Hindi responses naturally — base Gemma 4 multilingual capability preserved through fine-tuning. Validates Phase 3 multilingual approach.
+
+Gradio app at `app.py` streams agent status + final answer. Default location Bathinda (30.21°N, 74.94°E) hardcoded; UI for location selection in Phase 4.
+
+Demo: `python3 app.py` → http://127.0.0.1:7860
