@@ -27,6 +27,25 @@ MODEL_NAME = "climate-calendar"
 DEFAULT_LAT = 30.21   # Bathinda, Punjab
 DEFAULT_LNG = 74.94
 
+# Language steering — used in both planning and synthesis prompts.
+# "auto" = let model detect from user input (no steering).
+LANGUAGE_INSTRUCTIONS = {
+    "auto": "",
+    "english": "Respond in English.",
+    "hindi": "Respond in Hindi (Devanagari script). Use clear Hindi for farmers.",
+    "punjabi": "Respond in Punjabi (Gurmukhi script). Use clear Punjabi for farmers.",
+}
+
+# Steer the model toward PAU-recommended varieties when responding in any language.
+VARIETY_STEERING = (
+    "When recommending wheat varieties, use only PAU-recommended names: "
+    "HD 3086, PBW 826, DBW 187, PBW 675, PBW 343, PBW 725. "
+    "For rice: PR 126, PR 131, PR 130, Pusa Basmati 1509, 1718. "
+    "For cotton: F 2228, RCH 650 BG II, NCS 855 BG II. "
+    "For maize: PMH 1, PMH 2, PMH 10, JH 3459. "
+    "Do not invent variety names like 'HBV-1' or 'PBW 1'."
+)
+
 
 def _build_tool_catalog_text(tools: list[dict]) -> str:
     """Format the tool catalog as a plain text block to inject into Ollama's prompt."""
@@ -58,7 +77,7 @@ def _ollama_generate(prompt: str, stream: bool = False):
             "top_p": 0.9,
             "repeat_penalty": 1.1,
             "num_ctx": 4096,
-            "num_predict": 512,
+            "num_predict": 700,
         },
     }
 
@@ -98,7 +117,7 @@ Default location is Bathinda, Punjab: latitude {lat}, longitude {lng}.
 
 When the farmer's question requires multiple tools, emit ALL the tool calls in your response, one per line. Do not write any other text — just the tool calls.
 
-If the question is general agronomy advice that doesn't need real-time data (e.g., "what variety of wheat", "what is the ETL for whitefly"), respond directly without any tool calls.
+If the question is general agronomy advice that doesn't need real-time data (e.g., "what variety of wheat", "what is the ETL for whitefly"), respond directly without any tool calls. {language_instruction} {variety_steering}
 
 Farmer's question: {query}
 
@@ -119,6 +138,8 @@ Now write a final answer for the farmer using these real numbers. Requirements:
 - Keep the answer under 250 words
 - Speak plainly and respectfully to the farmer
 - End with: "Source: PAU Package of Practices + live climate data."
+- {language_instruction}
+- {variety_steering}
 
 Your answer:"""
 
@@ -127,6 +148,7 @@ def run_agent_streaming(
     user_query: str,
     lat: float = DEFAULT_LAT,
     lng: float = DEFAULT_LNG,
+    language: str = "auto",
     verbose: bool = True,
 ) -> Iterator[tuple[str, str]]:
     """Run the agent and stream status + final answer to Gradio.
@@ -138,11 +160,14 @@ def run_agent_streaming(
     yield ("Planning...", "")
 
     tool_catalog = _build_tool_catalog_text(TOOLS)
+    language_instruction = LANGUAGE_INSTRUCTIONS.get(language, "")
     planning_prompt = PLANNING_PROMPT_TEMPLATE.format(
         tool_catalog=tool_catalog,
         lat=lat,
         lng=lng,
         query=user_query,
+        language_instruction=language_instruction,
+        variety_steering=VARIETY_STEERING,
     )
 
     plan_text = _ollama_generate(planning_prompt, stream=False)
@@ -194,6 +219,8 @@ def run_agent_streaming(
     synthesis_prompt = SYNTHESIS_PROMPT_TEMPLATE.format(
         query=user_query,
         tool_results=tool_results_text,
+        language_instruction=language_instruction,
+        variety_steering=VARIETY_STEERING,
     )
 
     full_answer = ""
